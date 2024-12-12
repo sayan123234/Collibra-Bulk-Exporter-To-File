@@ -1,14 +1,7 @@
-# Ignore all .log files
+.gitignore
 *.log
-
-# Ignore env folder
 env/
-
-# Ignore .env files (useful for sensitive data)
 .env
-
-#Ignore output folder
 outputs/
-
-#Ignore
 __pycache__/
+
