@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from dotenv import load_dotenv
 from graphql_query import get_query
-from get_asset_name import get_asset_type_name
+from get_assetType_name import get_asset_type_name
 from OauthAuth import oauth_bearer_token
 
 # Setup logging
@@ -104,7 +104,8 @@ def flatten_json(asset, asset_type_name):
         for attr in asset.get(attr_type, []):
             attr_name = attr['type']['name']
             if attr_type == 'multiValueAttributes':
-                flattened[attr_name] = ', '.join(attr['stringValues'])
+                values = [''.join(v.strip() for v in attr['stringValues'])]
+                flattened[attr_name] = ', '.join(values)
             elif attr_type == 'stringAttributes':
                 flattened[attr_name] = attr['stringValue'].strip()
             else:
@@ -171,7 +172,7 @@ def process_asset_type(asset_type_id):
 
     if all_assets:
         flattened_assets = [flatten_json(asset, asset_type_name) for asset in all_assets]
-        output_filename = f"{file_path_to_save}{asset_type_name}"
+        output_filename = f"{asset_type_name}"
         output_file = save_data(flattened_assets, output_filename, OUTPUT_FORMAT)
 
         end_time = time.time()
