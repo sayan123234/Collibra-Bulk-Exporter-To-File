@@ -2,6 +2,8 @@
 
 This project helps in bulk exporting assets along with their related attributes, relations, and responsibilities by providing `assetTypeId(s)`. The `Collibra_Asset_Type_Id_Manager` is the JSON file where you can update the asset IDs. The tool then exports the data in the desired file format (CSV, JSON, Excel) in a separate folder called `outputs`. Additionally, the file or files are auto-generated based on the `assetTypeName(s)`.
 
+Upadte the `Collibra_Asset_Type_Id_Manager.json` file with the assetType ids which you want to export. 
+
 Follow the instructions below for creating the `.env` file:
 
 ---
