@@ -4,7 +4,7 @@ import logging
 from dotenv import load_dotenv
 from functools import lru_cache
 
-load_dotenv()
+load_dotenv(override=True)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -15,6 +15,7 @@ def oauth_bearer_token():
     
     client_id = os.getenv('CLIENT_ID')
     client_secret = os.getenv('CLIENT_SECRET')
+    print(client_id)
 
     base_url = os.getenv('COLLIBRA_INSTANCE_URL')
     url = f"https://{base_url}/rest/oauth/v2/token"

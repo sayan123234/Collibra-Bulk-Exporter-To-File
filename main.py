@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from graphql_query import get_query
 from get_assetType_name import get_asset_type_name
 from OauthAuth import oauth_bearer_token
+from get_asset_type import get_available_asset_type
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -31,6 +32,19 @@ with open('Collibra_Asset_Type_Id_Manager.json', 'r') as file:
     data = json.load(file)
 
 ASSET_TYPE_IDS = data['ids']
+
+#######!!!!WARNING!!!Uncomment only if you want to export all the asset types##########
+
+# asset_types_response = get_available_asset_type()
+# if asset_types_response and 'results' in asset_types_response:
+#     ASSET_TYPE_IDS = [asset['id'] for asset in asset_types_response['results']]
+#     logging.info(f"Retrieved {len(ASSET_TYPE_IDS)} asset type IDs")
+# else:
+#     logging.error("Failed to retrieve asset type IDs. Exiting.")
+#     ASSET_TYPE_IDS = []
+#     exit(1)
+    
+###############################################
 
 session = requests.Session()
 session.headers.update({'Authorization': f'Bearer {oauth_bearer_token()}'})
