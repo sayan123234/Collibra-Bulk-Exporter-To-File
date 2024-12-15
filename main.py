@@ -99,6 +99,7 @@ def process_data(asset_type_id, limit=94):
 
 def flatten_json(asset, asset_type_name):
     flattened = {
+        f"{asset_type_name} last Modified On": asset['modifiedOn'],
         f"UUID of {asset_type_name}": asset['id'],
         f"{asset_type_name} Full Name": asset['fullName'],
         f"{asset_type_name} Name": asset['displayName'],
