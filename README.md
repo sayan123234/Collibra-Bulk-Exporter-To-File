@@ -6,6 +6,26 @@ This project helps in bulk exporting assets along with their related attributes,
 
 ## Setup Instructions
 
+## Setting Up OAuth in Your Collibra Instance
+
+To connect the tool with your Collibra instance, you need to set up OAuth credentials.
+
+1. **Log in to Collibra**: 
+   - Navigate to your Collibra instance.
+
+2. **Access OAuth Settings**: 
+   - Go to **Settings** -> **OAuth Applications**.
+
+3. **Register a New Application**:
+   - Click on **Register Application**.
+   - Set the integration type to **"Integration"** and give the name of the **application**.
+
+4. **Generate Client Credentials**:
+   - Copy the `clientId` and `clientSecret`.
+   - Add them to the `.env` file as shown above.
+
+---
+
 Follow the steps below to set up and use the Collibra-Bulk-Exporter:
 
 ### 1. Clone the Repository
@@ -82,26 +102,6 @@ $ python main.py
 ```
 
 The output files will be saved in the `outputs` directory in the format specified in the `.env` file.
-
----
-
-## Setting Up OAuth in Your Collibra Instance
-
-To connect the tool with your Collibra instance, you need to set up OAuth credentials.
-
-1. **Log in to Collibra**: 
-   - Navigate to your Collibra instance.
-
-2. **Access OAuth Settings**: 
-   - Go to **Settings** -> **OAuth Applications**.
-
-3. **Register a New Application**:
-   - Click on **Register Application**.
-   - Set the integration type to **"Integration"** and give the name of the **application**.
-
-4. **Generate Client Credentials**:
-   - Copy the `clientId` and `clientSecret`.
-   - Add them to the `.env` file as shown above.
 
 ---
 
