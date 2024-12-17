@@ -115,17 +115,27 @@ def flatten_json(asset, asset_type_name):
         flattened[f"User Name Against {asset_type_name}"] = ', '.join(r['user']['fullName'] for r in responsibilities if 'user' in r)
         flattened[f"User Email Against {asset_type_name}"] = ', '.join(r['user']['email'] for r in responsibilities if 'user' in r)
 
+    # Temporary storage for string attributes
+    string_attrs = defaultdict(list)
+
     for attr_type in ['multiValueAttributes', 'stringAttributes', 'numericAttributes', 'dateAttributes', 'booleanAttributes']:
         for attr in asset.get(attr_type, []):
             attr_name = attr['type']['name']
             if attr_type == 'multiValueAttributes':
-                values = [''.join(v.strip() for v in attr['stringValues'])]
-                flattened[attr_name] = ', '.join(values)
+                flattened[attr_name] = ', '.join(attr['stringValues'])
             elif attr_type == 'stringAttributes':
-                flattened[attr_name] = attr['stringValue'].strip()
+                # Collect string attributes
+                string_attrs[attr_name].append(attr['stringValue'].strip())
             else:
                 value_key = f"{attr_type[:-10]}Value"
                 flattened[attr_name] = attr[value_key]
+
+    # Process collected string attributes
+    for attr_name, values in string_attrs.items():
+        if len(set(values)) > 1:
+            flattened[attr_name] = ', '.join(set(values))
+        else:
+            flattened[attr_name] = values[0]
 
     relation_types = defaultdict(list)
     for relation_direction in ['outgoingRelations', 'incomingRelations']:
