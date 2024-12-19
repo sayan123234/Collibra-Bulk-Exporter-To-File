@@ -99,8 +99,8 @@ def process_data(asset_type_id, limit=94):
 
 def flatten_json(asset, asset_type_name):
     flattened = {
-        f"{asset_type_name} last Modified On": asset['modifiedOn'],
-        f"UUID of {asset_type_name}": asset['id'],
+        f"Asset Id of {asset_type_name} ": asset['id'],
+        f"{asset_type_name} modified on": asset['modifiedOn'],
         f"{asset_type_name} Full Name": asset['fullName'],
         f"{asset_type_name} Name": asset['displayName'],
         "Asset Type": asset['type']['name'],
@@ -138,6 +138,7 @@ def flatten_json(asset, asset_type_name):
             flattened[attr_name] = values[0]
 
     relation_types = defaultdict(list)
+    relation_ids = defaultdict(list)
     for relation_direction in ['outgoingRelations', 'incomingRelations']:
         for relation in asset.get(relation_direction, []):
             role_or_corole = 'role' if relation_direction == 'outgoingRelations' else 'corole'
@@ -145,15 +146,21 @@ def flatten_json(asset, asset_type_name):
             target_or_source = 'target' if relation_direction == 'outgoingRelations' else 'source'
             
             if relation_direction == 'outgoingRelations':
-                rel_type = f"{asset_type_name} {role_type} {relation[target_or_source]['type']['name']}"
-            else:
                 rel_type = f"{relation[target_or_source]['type']['name']} {role_type} {asset_type_name}"
+            else:
+                rel_type = f"{asset_type_name} {role_type} {relation[target_or_source]['type']['name']}"
             
             display_name = relation[target_or_source].get('displayName', '')
+            asset_id = relation[target_or_source].get('id', '')
+            
             if display_name:
                 relation_types[rel_type].append(display_name.strip())
+                relation_ids[rel_type].append(asset_id)
 
-    flattened.update({rel_type: ', '.join(values) for rel_type, values in relation_types.items()})
+    # Update flattened with relation names and their IDs
+    for rel_type, values in relation_types.items():
+        flattened[rel_type] = ', '.join(values)
+        flattened[f"{rel_type} Asset IDs"] = ', '.join(str(id) for id in relation_ids[rel_type])
 
     return flattened
 
