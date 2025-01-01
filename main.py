@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 import time
 import logging
+from logging.handlers import RotatingFileHandler
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from dotenv import load_dotenv
@@ -12,8 +13,43 @@ from get_assetType_name import get_asset_type_name
 from OauthAuth import oauth_bearer_token
 from get_asset_type import get_available_asset_type
 
-# Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+def setup_logging():
+    """Configure logging with both file and console handlers."""
+    # Create logs directory if it doesn't exist
+    log_dir = 'logs'
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, 'collibra_exporter.log')
+
+    # Create formatters and handlers
+    file_formatter = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | %(filename)s:%(lineno)d | %(funcName)s | %(message)s'
+    )
+    console_formatter = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | %(message)s'
+    )
+
+    # File handler with rotation
+    file_handler = RotatingFileHandler(
+        log_file, maxBytes=10*1024*1024, backupCount=5  # 10MB per file, keep 5 backups
+    )
+    file_handler.setFormatter(file_formatter)
+    file_handler.setLevel(logging.DEBUG)
+
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(console_formatter)
+    console_handler.setLevel(logging.INFO)
+
+    # Root logger configuration
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+    return logger
+
+# Setup logging first
+logger = setup_logging()
 
 # Load environment variables
 load_dotenv()
@@ -53,9 +89,10 @@ def fetch_data(asset_type_id, paginate, limit):
     try:
         query = get_query(asset_type_id, f'"{paginate}"' if paginate else 'null')
         variables = {'limit': limit}
-        logging.info(f"Sending request with variables: {variables} and paginate: {paginate}")
+        logger.debug(f"Sending GraphQL request for asset_type_id: {asset_type_id}, paginate: {paginate}")
 
         graphql_url = f"https://{base_url}/graphql/knowledgeGraph/v1"
+        start_time = time.time()
         response = session.post(
             url=graphql_url,
             json={
@@ -63,38 +100,55 @@ def fetch_data(asset_type_id, paginate, limit):
                 'variables': variables
             }
         )
+        response_time = time.time() - start_time
+        logger.debug(f"GraphQL request completed in {response_time:.2f} seconds")
+
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        
+        if 'errors' in data:
+            logger.error(f"GraphQL errors received: {data['errors']}")
+            return None
+            
+        return data
     except requests.RequestException as error:
-        logging.error(f'Error fetching data: {error}')
+        logger.exception(f"Request failed for asset_type_id {asset_type_id}: {str(error)}")
+        return None
+    except json.JSONDecodeError as error:
+        logger.exception(f"Failed to parse JSON response: {str(error)}")
         return None
 
 def process_data(asset_type_id, limit=94):
+    logger.info(f"Starting data processing for asset_type_id: {asset_type_id}")
     all_assets = []
     paginate = None
+    batch_count = 0
 
     while True:
+        batch_count += 1
+        logger.debug(f"Fetching batch {batch_count} for asset_type_id: {asset_type_id}")
+        
         object_response = fetch_data(asset_type_id, paginate, limit)
 
-        if object_response and 'data' in object_response and 'assets' in object_response['data']:
+        if not object_response:
+            logger.error(f"Failed to fetch batch {batch_count} for asset_type_id: {asset_type_id}")
+            break
+
+        if 'data' in object_response and 'assets' in object_response['data']:
             assets = object_response['data']['assets']
 
             if not assets:
-                logging.info("No more assets to fetch.")
+                logger.info(f"No more assets to fetch for asset_type_id: {asset_type_id}")
                 break
 
             paginate = assets[-1]['id']
-
-            logging.info(f"Fetched {len(assets)} assets")
             all_assets.extend(assets)
+            logger.info(f"Batch {batch_count}: Fetched {len(assets)} assets. Total: {len(all_assets)}")
         else:
-            logging.warning('No assets found or there was an error fetching data.')
+            logger.warning(f"Unexpected response structure in batch {batch_count}")
             break
 
-    if not all_assets:
-        logging.warning("No data was fetched.")
-
-    logging.info(f"Total assets fetched: {len(all_assets)}")
+    logger.info(f"Completed processing asset_type_id: {asset_type_id}. Total assets: {len(all_assets)}")
     return all_assets
 
 def flatten_json(asset, asset_type_name):
@@ -168,40 +222,42 @@ def flatten_json(asset, asset_type_name):
     return flattened
 
 def save_data(data, file_name, format='excel'):
-    # Remove any invalid filename characters
-    file_name = "".join(c for c in file_name if c.isalnum() or c in (' ', '_', '-')).rstrip()
-    
-    # Join the file path with the filename
-    full_file_path = os.path.join(file_path_to_save, file_name)
-    
-    # Validate output format
-    valid_formats = ['json', 'csv', 'excel']
-    if format not in valid_formats:
-        logging.warning(f"Invalid format '{format}'. Using default format (Excel).")
-        format = 'excel'
-    
-    df = pd.DataFrame(data)
-    
-    if format == 'json':
-        json_file = f'{full_file_path}.json'
-        df.to_json(json_file, orient='records', indent=2)
-        logging.info(f"Data saved as JSON in {json_file}")
-        return json_file
-    elif format == 'csv':
-        csv_file = f'{full_file_path}.csv'
-        df.to_csv(csv_file, index=False)
-        logging.info(f"Data saved as CSV in {csv_file}")
-        return csv_file
-    else:  # excel
-        excel_file = f'{full_file_path}.xlsx'
-        df.to_excel(excel_file, index=False)
-        logging.info(f"Data saved as Excel in {excel_file}")
-        return excel_file
+    logger.info(f"Starting to save data with format: {format}")
+    start_time = time.time()
+
+    try:
+        # Remove any invalid filename characters
+        file_name = "".join(c for c in file_name if c.isalnum() or c in (' ', '_', '-')).rstrip()
+        full_file_path = os.path.join(file_path_to_save, file_name)
+        
+        df = pd.DataFrame(data)
+        logger.debug(f"Created DataFrame with {len(df)} rows and {len(df.columns)} columns")
+
+        if format == 'json':
+            json_file = f'{full_file_path}.json'
+            df.to_json(json_file, orient='records', indent=2)
+            output_file = json_file
+        elif format == 'csv':
+            csv_file = f'{full_file_path}.csv'
+            df.to_csv(csv_file, index=False)
+            output_file = csv_file
+        else:
+            excel_file = f'{full_file_path}.xlsx'
+            df.to_excel(excel_file, index=False)
+            output_file = excel_file
+
+        end_time = time.time()
+        logger.info(f"Successfully saved data to {output_file} in {end_time - start_time:.2f} seconds")
+        return output_file
+
+    except Exception as e:
+        logger.exception(f"Failed to save data: {str(e)}")
+        raise
 
 def process_asset_type(asset_type_id):
     start_time = time.time()
     asset_type_name = get_asset_type_name(asset_type_id)
-    logging.info(f"Processing asset type: {asset_type_name}")
+    logger.info(f"Processing asset type: {asset_type_name}")
 
     all_assets = process_data(asset_type_id)
 
@@ -213,28 +269,51 @@ def process_asset_type(asset_type_id):
         end_time = time.time()
         elapsed_time = end_time - start_time
 
-        logging.info(f"Time taken to process {asset_type_name}: {elapsed_time:.2f} seconds")
+        logger.info(f"Time taken to process {asset_type_name}: {elapsed_time:.2f} seconds")
         return elapsed_time
     else:
-        logging.critical(f"No data to save")
+        logger.critical(f"No data to save")
         return 0
 
 def main():
+    logger.info("Starting Collibra Bulk Exporter")
+    logger.info(f"Output format: {OUTPUT_FORMAT}")
+    logger.info(f"Number of asset types to process: {len(ASSET_TYPE_IDS)}")
+
     total_start_time = time.time()
+    successful_exports = 0
+    failed_exports = 0
     
-    total_elapsed_time = 0
     with ThreadPoolExecutor(max_workers=5) as executor:
-        future_to_asset = {executor.submit(process_asset_type, asset_type_id): asset_type_id for asset_type_id in ASSET_TYPE_IDS}
+        future_to_asset = {executor.submit(process_asset_type, asset_type_id): asset_type_id 
+                          for asset_type_id in ASSET_TYPE_IDS}
+        
         for future in as_completed(future_to_asset):
-            elapsed_time = future.result()
-            if elapsed_time:
-                total_elapsed_time += elapsed_time
+            asset_type_id = future_to_asset[future]
+            try:
+                elapsed_time = future.result()
+                if elapsed_time:
+                    successful_exports += 1
+                    logger.info(f"Successfully processed asset type ID: {asset_type_id}")
+                else:
+                    failed_exports += 1
+                    logger.error(f"Failed to process asset type ID: {asset_type_id}")
+            except Exception as e:
+                failed_exports += 1
+                logger.exception(f"Error processing asset type ID {asset_type_id}: {str(e)}")
     
     total_end_time = time.time()
-    total_program_time = total_end_time - total_start_time
+    total_time = total_end_time - total_start_time
     
-    logging.info(f"\nTotal time taken to process all asset types: {total_elapsed_time:.2f} seconds")
-    logging.info(f"Total program execution time: {total_program_time:.2f} seconds")
+    logger.info(f"\nExport Summary:")
+    logger.info(f"Total asset types processed: {len(ASSET_TYPE_IDS)}")
+    logger.info(f"Successful exports: {successful_exports}")
+    logger.info(f"Failed exports: {failed_exports}")
+    logger.info(f"Total execution time: {total_time:.2f} seconds")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        logger.exception("Fatal error in main program")
+        raise
