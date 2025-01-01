@@ -100,13 +100,16 @@ def process_data(asset_type_id, limit=94):
 def flatten_json(asset, asset_type_name):
     flattened = {
         f"Asset Id of {asset_type_name} ": asset['id'],
-        f"{asset_type_name} modified on": asset['modifiedOn'],
         f"{asset_type_name} Full Name": asset['fullName'],
         f"{asset_type_name} Name": asset['displayName'],
         "Asset Type": asset['type']['name'],
         "Status": asset['status']['name'],
         f"Domain of {asset_type_name}": asset['domain']['name'],
         f"Community of {asset_type_name}": asset['domain']['parent']['name'] if asset['domain']['parent'] else None,
+        f"{asset_type_name} modified on": asset['modifiedOn'],
+        f"{asset_type_name} last modified By": asset['modifiedBy']['fullName'],
+        f"{asset_type_name} created on": asset['createdOn'],
+        f"{asset_type_name} created By": asset['createdBy']['fullName'],
     }
 
     responsibilities = asset.get('responsibilities', [])
