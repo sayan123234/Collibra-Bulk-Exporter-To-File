@@ -54,6 +54,7 @@ OUTPUT_FORMAT = os.getenv('OUTPUT_FORMAT', 'csv')
 
 QUERY_LIMITS = {
     'main': 10000,
+    'characteristics_main_limit': 50,
     'string': 490,
     'multi': 490,
     'numeric': 490,
@@ -89,14 +90,17 @@ def fetch_data_for_query_type(asset_type_id, query_type, paginate):
     """Fetch data for a specific query type using its specific limit."""
     try:
         query_func = QUERY_TYPES[query_type]
-        main_limit = 10000  # Limit for the main assets query
-        nested_limit = 490  # Limit for nested attributes/relations
+        if query_type == 'main':
+            main_limit = ACTIVE_QUERY_LIMITS['main']
+        else:
+            main_limit = ACTIVE_QUERY_LIMITS['characteristics_main_limit']# Limit for the main assets query
+        nested_limit = ACTIVE_QUERY_LIMITS[query_type]  # Limit for nested attributes/relations
         
         # Handle pagination parameter properly
         paginate_value = f'"{paginate}"' if paginate else 'null'
-        query = query_func(asset_type_id, paginate_value, nested_limit)
+        query = query_func(asset_type_id, paginate_value, main_limit, nested_limit)
         
-        variables = {'limit': main_limit}
+        #variables = {'limit': main_limit}
         
         logger.debug(f"Sending GraphQL request for asset_type_id: {asset_type_id}, "
                     f"query_type: {query_type}, main_limit: {main_limit}, nested_limit: {nested_limit}")
@@ -106,8 +110,8 @@ def fetch_data_for_query_type(asset_type_id, query_type, paginate):
         response = session.post(
             url=graphql_url,
             json={
-                'query': query,
-                'variables': variables
+                'query': query
+                #'variables': variables
             }
         )
         response_time = time.time() - start_time
