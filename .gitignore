@@ -3,5 +3,6 @@
 env/
 .env
 outputs/
+outputs - Copy/
 __pycache__/
 
