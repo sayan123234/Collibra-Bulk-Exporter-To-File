@@ -1,4 +1,4 @@
-def get_main_assets_query(asset_type_id, paginate, limit):
+def get_main_assets_query(asset_type_id, paginate, nested_limit):
     return f"""
     query Assets($limit: Int!) {{
         assets(
@@ -32,7 +32,7 @@ def get_main_assets_query(asset_type_id, paginate, limit):
     }}
     """
 
-def get_string_attributes_query(asset_type_id, paginate, limit):
+def get_string_attributes_query(asset_type_id, paginate, nested_limit):
     return f"""
     query Assets($limit: Int!) {{
         assets(
@@ -40,7 +40,7 @@ def get_string_attributes_query(asset_type_id, paginate, limit):
             limit: $limit
         ) {{
             id
-            stringAttributes(limit: $limit) {{
+            stringAttributes(limit: {nested_limit}) {{
                 type {{
                     name
                 }}
@@ -50,7 +50,7 @@ def get_string_attributes_query(asset_type_id, paginate, limit):
     }}
     """
 
-def get_multi_value_attributes_query(asset_type_id, paginate, limit):
+def get_multi_value_attributes_query(asset_type_id, paginate, nested_limit):
     return f"""
     query Assets($limit: Int!) {{
         assets(
@@ -58,7 +58,7 @@ def get_multi_value_attributes_query(asset_type_id, paginate, limit):
             limit: $limit
         ) {{
             id
-            multiValueAttributes(limit: $limit) {{
+            multiValueAttributes(limit: {nested_limit}) {{
                 type {{
                     name
                 }}
@@ -68,7 +68,7 @@ def get_multi_value_attributes_query(asset_type_id, paginate, limit):
     }}
     """
 
-def get_numeric_attributes_query(asset_type_id, paginate, limit):
+def get_numeric_attributes_query(asset_type_id, paginate, nested_limit):
     return f"""
     query Assets($limit: Int!) {{
         assets(
@@ -76,7 +76,7 @@ def get_numeric_attributes_query(asset_type_id, paginate, limit):
             limit: $limit
         ) {{
             id
-            numericAttributes(limit: $limit) {{
+            numericAttributes(limit: {nested_limit}) {{
                 type {{
                     name
                 }}
@@ -86,7 +86,7 @@ def get_numeric_attributes_query(asset_type_id, paginate, limit):
     }}
     """
 
-def get_boolean_attributes_query(asset_type_id, paginate, limit):
+def get_boolean_attributes_query(asset_type_id, paginate, nested_limit):
     return f"""
     query Assets($limit: Int!) {{
         assets(
@@ -94,7 +94,7 @@ def get_boolean_attributes_query(asset_type_id, paginate, limit):
             limit: $limit
         ) {{
             id
-            booleanAttributes(limit: $limit) {{
+            booleanAttributes(limit: {nested_limit}) {{
                 type {{
                     name
                 }}
@@ -104,7 +104,7 @@ def get_boolean_attributes_query(asset_type_id, paginate, limit):
     }}
     """
 
-def get_outgoing_relations_query(asset_type_id, paginate, limit):
+def get_outgoing_relations_query(asset_type_id, paginate, nested_limit):
     return f"""
     query Assets($limit: Int!) {{
         assets(
@@ -112,7 +112,7 @@ def get_outgoing_relations_query(asset_type_id, paginate, limit):
             limit: $limit
         ) {{
             id
-            outgoingRelations(limit: $limit) {{
+            outgoingRelations(limit: {nested_limit}) {{
                 target {{
                     id
                     fullName
@@ -129,7 +129,7 @@ def get_outgoing_relations_query(asset_type_id, paginate, limit):
     }}
     """
 
-def get_incoming_relations_query(asset_type_id, paginate, limit):
+def get_incoming_relations_query(asset_type_id, paginate, nested_limit):
     return f"""
     query Assets($limit: Int!) {{
         assets(
@@ -137,7 +137,7 @@ def get_incoming_relations_query(asset_type_id, paginate, limit):
             limit: $limit
         ) {{
             id
-            incomingRelations(limit: $limit) {{
+            incomingRelations(limit: {nested_limit}) {{
                 source {{
                     id
                     fullName
@@ -154,7 +154,7 @@ def get_incoming_relations_query(asset_type_id, paginate, limit):
     }}
     """
 
-def get_responsibilities_query(asset_type_id, paginate, limit):
+def get_responsibilities_query(asset_type_id, paginate, nested_limit):
     return f"""
     query Assets($limit: Int!) {{
         assets(
@@ -162,7 +162,7 @@ def get_responsibilities_query(asset_type_id, paginate, limit):
             limit: $limit
         ) {{
             id
-            responsibilities(limit: $limit) {{
+            responsibilities(limit: {nested_limit}) {{
                 role {{
                     name
                 }}

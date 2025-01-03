@@ -62,6 +62,7 @@ QUERY_LIMITS = {
     'incoming': 490,
     'responsibilities': 490
 }
+
 def load_query_limits():
     """Load query limits from environment variables or use defaults."""
     env_limits = {}
@@ -88,16 +89,17 @@ def fetch_data_for_query_type(asset_type_id, query_type, paginate):
     """Fetch data for a specific query type using its specific limit."""
     try:
         query_func = QUERY_TYPES[query_type]
-        limit = ACTIVE_QUERY_LIMITS[query_type]
+        main_limit = 10000  # Limit for the main assets query
+        nested_limit = 490  # Limit for nested attributes/relations
         
         # Handle pagination parameter properly
         paginate_value = f'"{paginate}"' if paginate else 'null'
-        query = query_func(asset_type_id, paginate_value, limit)
+        query = query_func(asset_type_id, paginate_value, nested_limit)
         
-        variables = {'limit': limit}
+        variables = {'limit': main_limit}
         
         logger.debug(f"Sending GraphQL request for asset_type_id: {asset_type_id}, "
-                    f"query_type: {query_type}, limit: {limit}")
+                    f"query_type: {query_type}, main_limit: {main_limit}, nested_limit: {nested_limit}")
 
         graphql_url = f"https://{base_url}/graphql/knowledgeGraph/v1"
         start_time = time.time()
