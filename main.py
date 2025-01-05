@@ -160,45 +160,68 @@ def process_data(asset_type_id, limit=94, nested_limit=50):
 
                 # Initialize nested fields if they don't exist
                 for field in nested_fields:
-                    complete_asset[field] = asset.get(field, [])
-
-                # Process each nested field
-                for field in nested_fields:
-                    nested_offset = nested_limit  # Start with offset 50 as we already have first 50
+                    if field not in complete_asset:
+                        complete_asset[field] = []
+                    initial_data = complete_asset[field]
                     
-                    while True:
-                        nested_response = fetch_data(asset_type_id, asset['id'], 1, nested_offset, nested_limit)
+                    # Only continue pagination if we got exactly nested_limit items
+                    # (indicating there might be more)
+                    if len(initial_data) == nested_limit:
+                        nested_offset = nested_limit
                         
-                        if not nested_response or \
-                           'data' not in nested_response or \
-                           'assets' not in nested_response['data'] or \
-                           not nested_response['data']['assets']:
-                            break
-                        
-                        nested_data = nested_response['data']['assets'][0].get(field, [])
-                        
-                        # If we get an empty array, we've retrieved all data for this field
-                        if nested_data == []:
-                            logger.debug(f"Found end of {field} at offset {nested_offset}")
-                            break
-                        
-                        # Add the nested data and increment offset
-                        complete_asset[field].extend(nested_data)
-                        nested_offset += nested_limit
-                        logger.debug(f"Added {len(nested_data)} {field} items at offset {nested_offset - nested_limit}")
+                        while True:
+                            nested_response = fetch_data(
+                                asset_type_id, 
+                                asset['id'], 
+                                1, 
+                                nested_offset, 
+                                nested_limit
+                            )
+                            
+                            if not nested_response or \
+                               'data' not in nested_response or \
+                               'assets' not in nested_response['data'] or \
+                               not nested_response['data']['assets']:
+                                break
+                            
+                            nested_data = nested_response['data']['assets'][0].get(field, [])
+                            
+                            # If we get an empty array or less than the limit, 
+                            # we've retrieved all data for this field
+                            if not nested_data or len(nested_data) < nested_limit:
+                                logger.debug(f"Found end of {field} at offset {nested_offset} " +
+                                          f"with {len(nested_data)} items")
+                                if nested_data:  # Add final batch if not empty
+                                    complete_asset[field].extend(nested_data)
+                                break
+                            
+                            # Add the nested data and increment offset
+                            complete_asset[field].extend(nested_data)
+                            nested_offset += nested_limit
+                            logger.debug(f"Added {len(nested_data)} {field} items at offset " +
+                                      f"{nested_offset - nested_limit}")
+                    else:
+                        logger.debug(f"No additional pagination needed for {field}, " +
+                                  f"got {len(initial_data)} items")
 
                 all_assets.append(complete_asset)
                 logger.info(f"Completed asset {asset['id']} with total nested items: " + 
                           ", ".join(f"{field}: {len(complete_asset[field])}" 
                                   for field in nested_fields))
 
+            if len(assets) < limit:
+                logger.info("Retrieved fewer assets than limit, ending pagination")
+                break
+                
             paginate = assets[-1]['id']
-            logger.info(f"Batch {batch_count}: Processed {len(assets)} assets. Total: {len(all_assets)}")
+            logger.info(f"Batch {batch_count}: Processed {len(assets)} assets. " +
+                      f"Total: {len(all_assets)}")
         else:
             logger.warning(f"Unexpected response structure in batch {batch_count}")
             break
 
-    logger.info(f"Completed processing asset_type_id: {asset_type_id}. Total assets: {len(all_assets)}")
+    logger.info(f"Completed processing asset_type_id: {asset_type_id}. " +
+               f"Total assets: {len(all_assets)}")
     return all_assets
 
 def flatten_json(asset, asset_type_name):
