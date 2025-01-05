@@ -119,31 +119,53 @@ def fetch_data(asset_type_id, paginate, limit, nested_offset=0, nested_limit=50)
         return None
 
 def process_data(asset_type_id, limit=94, nested_limit=50):
-    logger.info(f"Starting data processing for asset_type_id: {asset_type_id}")
+    asset_type_name = get_asset_type_name(asset_type_id)
+    logger.info("="*60)
+    logger.info(f"Starting data processing for asset type: {asset_type_name} (ID: {asset_type_id})")
+    logger.info(f"Configuration - Batch Size: {limit}, Nested Limit: {nested_limit}")
+    logger.info("="*60)
+    
     all_assets = []
     paginate = None
     batch_count = 0
+    start_time = time.time()
 
     while True:
         batch_count += 1
-        logger.debug(f"Fetching batch {batch_count} for asset_type_id: {asset_type_id}")
+        batch_start_time = time.time()
+        logger.info(f"\n[Batch {batch_count}] Starting new batch for {asset_type_name}")
+        logger.debug(f"[Batch {batch_count}] Pagination token: {paginate}")
         
         # Fetch initial data
         object_response = fetch_data(asset_type_id, paginate, limit, 0, nested_limit)
 
         if not object_response:
-            logger.error(f"Failed to fetch batch {batch_count} for asset_type_id: {asset_type_id}")
+            logger.error(f"[Batch {batch_count}] [ERROR] Failed to fetch data for {asset_type_name}")
+            # Log the full response for debugging
+            logger.error(f"Response: {object_response}")
             break
 
         if 'data' in object_response and 'assets' in object_response['data']:
             assets = object_response['data']['assets']
 
             if not assets:
-                logger.info(f"No more assets to fetch for asset_type_id: {asset_type_id}")
+                logger.info(f"[Batch {batch_count}] [DONE] No more assets to fetch for {asset_type_name}")
                 break
 
+            logger.info(f"[Batch {batch_count}] Processing {len(assets)} assets")
+            
             # For each asset, fetch all nested data with pagination
-            for asset in assets:
+            for idx, asset in enumerate(assets, 1):
+                asset_start_time = time.time()
+                asset_id = asset.get('id', 'Unknown ID')
+                asset_name = asset.get('displayName', 'Unknown Name')
+                
+                logger.info(f"\n[Batch {batch_count}][Asset {idx}/{len(assets)}] " +
+                          f"Processing asset: {asset_name} (ID: {asset_id})")
+                
+                # Log the initial asset data structure
+                logger.debug(f"[DEBUG] Initial asset data keys: {list(asset.keys())}")
+                
                 complete_asset = asset.copy()
                 
                 # Lists to store all nested data
@@ -158,70 +180,128 @@ def process_data(asset_type_id, limit=94, nested_limit=50):
                     'responsibilities'
                 ]
 
+                missing_fields = []
+                empty_fields = []
+                
                 # Initialize nested fields if they don't exist
                 for field in nested_fields:
+                    field_start_time = time.time()
+                    
+                    # Check if field exists in initial response
                     if field not in complete_asset:
+                        missing_fields.append(field)
+                        logger.warning(f"[Batch {batch_count}][Asset {idx}][{field}] " +
+                                    f"[WARNING] Field missing in initial response for asset {asset_id}")
                         complete_asset[field] = []
+                        continue
+                        
                     initial_data = complete_asset[field]
                     
+                    # Check if field is empty in initial response
+                    if not initial_data:
+                        empty_fields.append(field)
+                        logger.warning(f"[Batch {batch_count}][Asset {idx}][{field}] " +
+                                    f"[WARNING] Field is empty in initial response for asset {asset_id}")
+                    
+                    logger.debug(f"[Batch {batch_count}][Asset {idx}][{field}] " +
+                               f"Initial count: {len(initial_data)}")
+                    
                     # Only continue pagination if we got exactly nested_limit items
-                    # (indicating there might be more)
                     if len(initial_data) == nested_limit:
+                        logger.info(f"[Batch {batch_count}][Asset {idx}][{field}] " +
+                                  f"Found {nested_limit} items, checking for more...")
                         nested_offset = nested_limit
+                        total_items = len(initial_data)
                         
                         while True:
                             nested_response = fetch_data(
                                 asset_type_id, 
-                                asset['id'], 
+                                asset_id, 
                                 1, 
                                 nested_offset, 
                                 nested_limit
                             )
                             
+                            # Log the nested query response for debugging
+                            if nested_response is None:
+                                logger.error(f"[Batch {batch_count}][Asset {idx}][{field}] " +
+                                         f"[ERROR] Nested query returned None for asset {asset_id}")
+                                break
+                                
+                            if 'errors' in nested_response:
+                                logger.error(f"[Batch {batch_count}][Asset {idx}][{field}] " +
+                                         f"[ERROR] GraphQL errors in nested query for asset {asset_id}: " +
+                                         f"{nested_response['errors']}")
+                                break
+                            
                             if not nested_response or \
                                'data' not in nested_response or \
                                'assets' not in nested_response['data'] or \
                                not nested_response['data']['assets']:
+                                logger.warning(f"[Batch {batch_count}][Asset {idx}][{field}] " +
+                                            f"[WARNING] Failed to fetch additional data at offset {nested_offset}")
                                 break
                             
                             nested_data = nested_response['data']['assets'][0].get(field, [])
                             
-                            # If we get an empty array or less than the limit, 
-                            # we've retrieved all data for this field
                             if not nested_data or len(nested_data) < nested_limit:
-                                logger.debug(f"Found end of {field} at offset {nested_offset} " +
-                                          f"with {len(nested_data)} items")
-                                if nested_data:  # Add final batch if not empty
+                                if nested_data:
+                                    total_items += len(nested_data)
                                     complete_asset[field].extend(nested_data)
+                                logger.info(f"[Batch {batch_count}][Asset {idx}][{field}] " +
+                                          f"[DONE] Reached end with {total_items} total items")
                                 break
                             
-                            # Add the nested data and increment offset
+                            total_items += len(nested_data)
                             complete_asset[field].extend(nested_data)
                             nested_offset += nested_limit
-                            logger.debug(f"Added {len(nested_data)} {field} items at offset " +
-                                      f"{nested_offset - nested_limit}")
-                    else:
-                        logger.debug(f"No additional pagination needed for {field}, " +
-                                  f"got {len(initial_data)} items")
+                            logger.debug(f"[Batch {batch_count}][Asset {idx}][{field}] " +
+                                      f"Retrieved {len(nested_data)} more items at offset {nested_offset - nested_limit}")
+                    
+                    field_time = time.time() - field_start_time
+                    logger.info(f"[Batch {batch_count}][Asset {idx}][{field}] " +
+                              f"[DONE] Completed in {field_time:.2f}s with {len(complete_asset[field])} total items")
+
+                # Log summary of missing or empty fields
+                if missing_fields or empty_fields:
+                    logger.warning(f"\n[Batch {batch_count}][Asset {idx}] Data completeness report for asset {asset_id}:")
+                    if missing_fields:
+                        logger.warning(f"Missing fields: {', '.join(missing_fields)}")
+                    if empty_fields:
+                        logger.warning(f"Empty fields: {', '.join(empty_fields)}")
 
                 all_assets.append(complete_asset)
-                logger.info(f"Completed asset {asset['id']} with total nested items: " + 
-                          ", ".join(f"{field}: {len(complete_asset[field])}" 
-                                  for field in nested_fields))
+                asset_time = time.time() - asset_start_time
+                logger.info(f"\n[Batch {batch_count}][Asset {idx}] [DONE] Completed asset processing in {asset_time:.2f}s")
+                logger.info("Summary of nested items:")
+                for field in nested_fields:
+                    logger.info(f"  - {field}: {len(complete_asset[field])} items")
 
             if len(assets) < limit:
-                logger.info("Retrieved fewer assets than limit, ending pagination")
+                logger.info(f"\n[Batch {batch_count}] [DONE] Retrieved fewer assets ({len(assets)}) than limit ({limit})")
+                logger.info("Ending pagination")
                 break
                 
             paginate = assets[-1]['id']
-            logger.info(f"Batch {batch_count}: Processed {len(assets)} assets. " +
-                      f"Total: {len(all_assets)}")
+            batch_time = time.time() - batch_start_time
+            logger.info(f"\n[Batch {batch_count}] [DONE] Completed batch in {batch_time:.2f}s")
+            logger.info(f"Processed {len(assets)} assets in this batch")
+            logger.info(f"Total assets processed so far: {len(all_assets)}")
         else:
-            logger.warning(f"Unexpected response structure in batch {batch_count}")
+            logger.warning(f"[Batch {batch_count}] [WARNING] Unexpected response structure")
+            # Log the problematic response
+            logger.warning(f"Response structure: {object_response.keys() if object_response else None}")
             break
 
-    logger.info(f"Completed processing asset_type_id: {asset_type_id}. " +
-               f"Total assets: {len(all_assets)}")
+    total_time = time.time() - start_time
+    logger.info("\n" + "="*60)
+    logger.info(f"[DONE] Completed processing {asset_type_name}")
+    logger.info(f"Total assets processed: {len(all_assets)}")
+    logger.info(f"Total batches processed: {batch_count}")
+    logger.info(f"Total time taken: {total_time:.2f} seconds")
+    logger.info(f"Average time per asset: {total_time/len(all_assets):.2f} seconds")
+    logger.info("="*60)
+    
     return all_assets
 
 def flatten_json(asset, asset_type_name):
