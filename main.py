@@ -14,11 +14,15 @@ from OauthAuth import oauth_bearer_token
 from get_asset_type import get_available_asset_type
 
 def setup_logging():
-    """Configure logging with both file and console handlers."""
+    """Configure logging with both file and console handlers, saving logs with timestamps."""
     # Create logs directory if it doesn't exist
     log_dir = 'logs'
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, 'collibra_exporter.log')
+    
+    # Create timestamp for log filename
+    timestamp = time.strftime('%Y%m%d_%H%M%S')
+    log_filename = f'collibra_exporter_{timestamp}.log'
+    log_file = os.path.join(log_dir, log_filename)
 
     # Create formatters and handlers
     file_formatter = logging.Formatter(
@@ -29,8 +33,11 @@ def setup_logging():
     )
 
     # File handler with rotation
+    # Keep 10MB per file, with 10 backup files
     file_handler = RotatingFileHandler(
-        log_file, maxBytes=10*1024*1024, backupCount=5  # 10MB per file, keep 5 backups
+        log_file, 
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=10          # Keep 10 backup files
     )
     file_handler.setFormatter(file_formatter)
     file_handler.setLevel(logging.DEBUG)
@@ -43,8 +50,40 @@ def setup_logging():
     # Root logger configuration
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
+    
+    # Remove any existing handlers
+    logger.handlers = []
+    
+    # Add our handlers
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
+
+    # Log the start of a new session
+    logger.info("="*60)
+    logger.info(f"Starting new logging session at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"Log file created at: {log_file}")
+    logger.info("="*60)
+
+    # Create a cleanup function for old logs
+    def cleanup_old_logs(log_dir, max_days=30):
+        """Remove log files older than max_days."""
+        current_time = time.time()
+        logger.info(f"Checking for logs older than {max_days} days")
+        
+        for filename in os.listdir(log_dir):
+            if filename.endswith('.log'):
+                filepath = os.path.join(log_dir, filename)
+                file_time = os.path.getmtime(filepath)
+                
+                if (current_time - file_time) > (max_days * 24 * 60 * 60):
+                    try:
+                        os.remove(filepath)
+                        logger.info(f"Removed old log file: {filename}")
+                    except Exception as e:
+                        logger.warning(f"Could not remove old log file {filename}: {str(e)}")
+
+    # Run cleanup for logs older than 30 days
+    cleanup_old_logs(log_dir)
 
     return logger
 
