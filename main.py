@@ -85,11 +85,11 @@ ASSET_TYPE_IDS = data['ids']
 session = requests.Session()
 session.headers.update({'Authorization': f'Bearer {oauth_bearer_token()}'})
 
-def fetch_data(asset_type_id, paginate, limit):
+def fetch_data(asset_type_id, paginate, limit, nested_offset=0, nested_limit=50):
     try:
-        query = get_query(asset_type_id, f'"{paginate}"' if paginate else 'null')
+        query = get_query(asset_type_id, f'"{paginate}"' if paginate else 'null', nested_offset, nested_limit)
         variables = {'limit': limit}
-        logger.debug(f"Sending GraphQL request for asset_type_id: {asset_type_id}, paginate: {paginate}")
+        logger.debug(f"Sending GraphQL request for asset_type_id: {asset_type_id}, paginate: {paginate}, nested_offset: {nested_offset}")
 
         graphql_url = f"https://{base_url}/graphql/knowledgeGraph/v1"
         start_time = time.time()
@@ -118,7 +118,7 @@ def fetch_data(asset_type_id, paginate, limit):
         logger.exception(f"Failed to parse JSON response: {str(error)}")
         return None
 
-def process_data(asset_type_id, limit=94):
+def process_data(asset_type_id, limit=94, nested_limit=50):
     logger.info(f"Starting data processing for asset_type_id: {asset_type_id}")
     all_assets = []
     paginate = None
@@ -128,7 +128,11 @@ def process_data(asset_type_id, limit=94):
         batch_count += 1
         logger.debug(f"Fetching batch {batch_count} for asset_type_id: {asset_type_id}")
         
-        object_response = fetch_data(asset_type_id, paginate, limit)
+        # Initialize container for complete asset data
+        complete_assets = []
+        
+        # Fetch initial data
+        object_response = fetch_data(asset_type_id, paginate, limit, 0, nested_limit)
 
         if not object_response:
             logger.error(f"Failed to fetch batch {batch_count} for asset_type_id: {asset_type_id}")
@@ -141,9 +145,46 @@ def process_data(asset_type_id, limit=94):
                 logger.info(f"No more assets to fetch for asset_type_id: {asset_type_id}")
                 break
 
+            # For each asset, fetch all nested data with pagination
+            for asset in assets:
+                complete_asset = asset.copy()
+                
+                # Lists to store all nested data
+                for field in ['stringAttributes', 'multiValueAttributes', 'numericAttributes', 
+                            'dateAttributes', 'booleanAttributes', 'outgoingRelations', 
+                            'incomingRelations', 'responsibilities']:
+                    complete_asset[field] = asset.get(field, [])
+                    current_length = len(complete_asset[field])
+                    
+                    # Only continue if we got a full page of results
+                    if current_length == nested_limit:
+                        nested_offset = nested_limit
+                        
+                        while True:
+                            nested_response = fetch_data(asset_type_id, asset['id'], 1, nested_offset, nested_limit)
+                            
+                            if not nested_response or \
+                               'data' not in nested_response or \
+                               'assets' not in nested_response['data'] or \
+                               not nested_response['data']['assets']:
+                                break
+                                
+                            nested_data = nested_response['data']['assets'][0].get(field, [])
+                            
+                            # Stop if we get no data or less than requested
+                            if not nested_data or len(nested_data) < nested_limit:
+                                if nested_data:  # Add any remaining data
+                                    complete_asset[field].extend(nested_data)
+                                break
+                            
+                            complete_asset[field].extend(nested_data)
+                            nested_offset += nested_limit
+
+                complete_assets.append(complete_asset)
+
             paginate = assets[-1]['id']
-            all_assets.extend(assets)
-            logger.info(f"Batch {batch_count}: Fetched {len(assets)} assets. Total: {len(all_assets)}")
+            all_assets.extend(complete_assets)
+            logger.info(f"Batch {batch_count}: Fetched {len(complete_assets)} assets. Total: {len(all_assets)}")
         else:
             logger.warning(f"Unexpected response structure in batch {batch_count}")
             break
