@@ -228,7 +228,7 @@ def process_data(asset_type_id, limit=94, nested_limit=50):
             # Process each nested field
             for field in nested_fields:
                 field_data = []
-                if field in asset:
+                if (field in asset):
                     field_data.extend(asset[field])
                     
                     # Continue fetching if initial data hits the limit
