@@ -10,7 +10,7 @@ from collections import defaultdict
 from dotenv import load_dotenv
 from graphql_query import get_query
 from get_assetType_name import get_asset_type_name
-from OauthAuth import oauth_bearer_token
+from OauthAuth import get_auth_header
 from get_asset_type import get_available_asset_type
 
 def setup_logging():
@@ -33,7 +33,6 @@ def setup_logging():
     )
 
     # File handler with rotation
-    # Keep 10MB per file, with 10 backup files
     file_handler = RotatingFileHandler(
         log_file, 
         maxBytes=10*1024*1024,  # 10MB
@@ -64,7 +63,6 @@ def setup_logging():
     logger.info(f"Log file created at: {log_file}")
     logger.info("="*60)
 
-    # Create a cleanup function for old logs
     def cleanup_old_logs(log_dir, max_days=30):
         """Remove log files older than max_days."""
         current_time = time.time()
@@ -122,7 +120,23 @@ ASSET_TYPE_IDS = data['ids']
 ###############################################
 
 session = requests.Session()
-session.headers.update({'Authorization': f'Bearer {oauth_bearer_token()}'})
+
+def make_request(url, method='post', **kwargs):
+    """Make a request with automatic token refresh handling."""
+    try:
+        # Always get fresh headers before making a request
+        headers = get_auth_header()
+        if 'headers' in kwargs:
+            kwargs['headers'].update(headers)
+        else:
+            kwargs['headers'] = headers
+
+        response = getattr(session, method)(url=url, **kwargs)
+        response.raise_for_status()
+        return response
+    except requests.RequestException as error:
+        logger.error(f"Request failed: {str(error)}")
+        raise
 
 def fetch_data(asset_type_id, paginate, limit, nested_offset=0, nested_limit=50):
     try:
@@ -132,17 +146,18 @@ def fetch_data(asset_type_id, paginate, limit, nested_offset=0, nested_limit=50)
 
         graphql_url = f"https://{base_url}/graphql/knowledgeGraph/v1"
         start_time = time.time()
-        response = session.post(
+        
+        response = make_request(
             url=graphql_url,
             json={
                 'query': query,
                 'variables': variables
             }
         )
+        
         response_time = time.time() - start_time
         logger.debug(f"GraphQL request completed in {response_time:.2f} seconds")
 
-        response.raise_for_status()
         data = response.json()
         
         if 'errors' in data:
