@@ -8,7 +8,7 @@ from logging.handlers import RotatingFileHandler
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from dotenv import load_dotenv
-from graphql_query import get_query
+from graphql_query import get_query, get_nested_query
 from get_assetType_name import get_asset_type_name
 from OauthAuth import get_auth_header
 from get_asset_type import get_available_asset_type
@@ -103,21 +103,8 @@ OUTPUT_FORMAT = os.getenv('OUTPUT_FORMAT', 'csv')  # Can be 'json', 'csv', or 'e
 
 with open('Collibra_Asset_Type_Id_Manager.json', 'r') as file:
     data = json.load(file)
-
-ASSET_TYPE_IDS = data['ids']
-
-#######!!!!WARNING!!!Uncomment only if you want to export all the asset types##########
-
-# asset_types_response = get_available_asset_type()
-# if asset_types_response and 'results' in asset_types_response:
-#     ASSET_TYPE_IDS = [asset['id'] for asset in asset_types_response['results']]
-#     logging.info(f"Retrieved {len(ASSET_TYPE_IDS)} asset type IDs")
-# else:
-#     logging.error("Failed to retrieve asset type IDs. Exiting.")
-#     ASSET_TYPE_IDS = []
-#     exit(1)
     
-###############################################
+ASSET_TYPE_IDS = data['ids']
 
 session = requests.Session()
 
@@ -139,6 +126,9 @@ def make_request(url, method='post', **kwargs):
         raise
 
 def fetch_data(asset_type_id, paginate, limit, nested_offset=0, nested_limit=50):
+    """
+    Fetch initial data batch with basic nested limits.
+    """
     try:
         query = get_query(asset_type_id, f'"{paginate}"' if paginate else 'null', nested_offset, nested_limit)
         variables = {'limit': limit}
@@ -172,11 +162,46 @@ def fetch_data(asset_type_id, paginate, limit, nested_offset=0, nested_limit=50)
         logger.exception(f"Failed to parse JSON response: {str(error)}")
         return None
 
-def process_data(asset_type_id, limit=94, nested_limit=50):
+def fetch_nested_data(asset_type_id, asset_id, field_name, nested_limit=49990):
+    """
+    Fetch a specific nested field with high limit in a separate query.
+    """
+    try:
+        query = get_nested_query(asset_type_id, asset_id, field_name, nested_limit)
+        
+        graphql_url = f"https://{base_url}/graphql/knowledgeGraph/v1"
+        start_time = time.time()
+        
+        response = make_request(
+            url=graphql_url,
+            json={'query': query}
+        )
+        
+        response_time = time.time() - start_time
+        logger.debug(f"Nested GraphQL request completed in {response_time:.2f} seconds")
+
+        data = response.json()
+        if 'errors' in data:
+            logger.error(f"GraphQL errors in nested query: {data['errors']}")
+            return None
+            
+        if not data['data']['assets']:
+            logger.error(f"No asset found in nested query response")
+            return None
+            
+        return data['data']['assets'][0][field_name]
+    except Exception as e:
+        logger.exception(f"Failed to fetch nested data for {field_name}: {str(e)}")
+        return None
+
+def process_data(asset_type_id, limit=94, initial_nested_limit=50):
+    """
+    Process assets with optimized nested field handling.
+    """
     asset_type_name = get_asset_type_name(asset_type_id)
     logger.info("="*60)
     logger.info(f"Starting data processing for asset type: {asset_type_name} (ID: {asset_type_id})")
-    logger.info(f"Configuration - Batch Size: {limit}, Nested Limit: {nested_limit}")
+    logger.info(f"Configuration - Batch Size: {limit}, Initial Nested Limit: {initial_nested_limit}")
     logger.info("="*60)
     
     all_assets = []
@@ -190,13 +215,20 @@ def process_data(asset_type_id, limit=94, nested_limit=50):
         logger.info(f"\n[Batch {batch_count}] Starting new batch for {asset_type_name}")
         logger.debug(f"[Batch {batch_count}] Pagination token: {paginate}")
         
-        # Get initial batch of assets
-        object_response = fetch_data(asset_type_id, paginate, limit, 0, nested_limit)
-        if not object_response or 'data' not in object_response or 'assets' not in object_response['data']:
+        # Get initial batch with small nested limits
+        initial_response = fetch_data(
+            asset_type_id, 
+            paginate, 
+            limit, 
+            0, 
+            initial_nested_limit
+        )
+        
+        if not initial_response or 'data' not in initial_response or 'assets' not in initial_response['data']:
             logger.error(f"[Batch {batch_count}] Failed to fetch initial data")
             break
 
-        current_assets = object_response['data']['assets']
+        current_assets = initial_response['data']['assets']
         if not current_assets:
             logger.info(f"[Batch {batch_count}] No more assets to fetch")
             break
@@ -210,67 +242,47 @@ def process_data(asset_type_id, limit=94, nested_limit=50):
             asset_name = asset.get('displayName', 'Unknown Name')
             logger.info(f"\n[Batch {batch_count}][Asset {asset_idx}/{len(current_assets)}] Processing: {asset_name}")
             
-            # Initialize complete asset with base data
             complete_asset = asset.copy()
             
-            # Define nested fields to process
+            # Define nested fields to check
             nested_fields = [
-                'stringAttributes', 
-                'multiValueAttributes', 
-                'numericAttributes', 
-                'dateAttributes', 
-                'booleanAttributes', 
-                'outgoingRelations', 
-                'incomingRelations', 
+                'stringAttributes',
+                'multiValueAttributes',
+                'numericAttributes',
+                'dateAttributes',
+                'booleanAttributes',
+                'outgoingRelations',
+                'incomingRelations',
                 'responsibilities'
             ]
 
-            # Process each nested field
+            # Check each nested field
             for field in nested_fields:
-                field_data = []
-                if (field in asset):
-                    field_data.extend(asset[field])
+                if field not in asset:
+                    continue
                     
-                    # Continue fetching if initial data hits the limit
-                    if len(asset[field]) == nested_limit:
-                        offset = nested_limit
-                        while True:
-                            logger.info(f"[Batch {batch_count}][Asset {asset_idx}][{field}] "
-                                      f"Fetching more data from offset {offset}...")
-                            
-                            nested_response = fetch_data(asset_type_id, paginate, limit, offset, nested_limit)
-                            
-                            if not nested_response or 'data' not in nested_response or \
-                               'assets' not in nested_response['data'] or \
-                               not nested_response['data']['assets']:
-                                break
-
-                            # Find the corresponding asset in the response
-                            matching_asset = None
-                            for resp_asset in nested_response['data']['assets']:
-                                if resp_asset['id'] == asset_id:
-                                    matching_asset = resp_asset
-                                    break
-
-                            if not matching_asset or field not in matching_asset or \
-                               not matching_asset[field]:
-                                break
-
-                            additional_data = matching_asset[field]
-                            field_data.extend(additional_data)
-                            
-                            logger.info(f"[Batch {batch_count}][Asset {asset_idx}][{field}] "
-                                      f"Retrieved {len(additional_data)} more items. "
-                                      f"Total so far: {len(field_data)}")
-
-                            if len(additional_data) < nested_limit:
-                                break
-                                
-                            offset += nested_limit
-
-                logger.info(f"[Batch {batch_count}][Asset {asset_idx}][{field}] "
-                          f"Final count: {len(field_data)} items")
-                complete_asset[field] = field_data
+                initial_data = asset[field]
+                
+                # If we hit the initial limit, fetch all data in one big query
+                if len(initial_data) == initial_nested_limit:
+                    logger.info(f"[Batch {batch_count}][Asset {asset_idx}][{field}] Requires full fetch")
+                    
+                    complete_data = fetch_nested_data(
+                        asset_type_id,
+                        asset_id,
+                        field
+                    )
+                    
+                    if complete_data:
+                        complete_asset[field] = complete_data
+                        logger.info(f"[Batch {batch_count}][Asset {asset_idx}][{field}] "
+                                  f"Retrieved {len(complete_data)} items")
+                    else:
+                        logger.warning(f"[Batch {batch_count}][Asset {asset_idx}][{field}] "
+                                     f"Failed to fetch complete data, using initial data")
+                        complete_asset[field] = initial_data
+                else:
+                    complete_asset[field] = initial_data
 
             processed_assets.append(complete_asset)
             logger.info(f"[Batch {batch_count}][Asset {asset_idx}] Completed processing")
@@ -292,7 +304,7 @@ def process_data(asset_type_id, limit=94, nested_limit=50):
     logger.info(f"Total assets processed: {len(all_assets)}")
     logger.info(f"Total batches processed: {batch_count}")
     logger.info(f"Total time taken: {total_time:.2f} seconds")
-    logger.info(f"Average time per asset: {total_time/len(all_assets):.2f} seconds")
+    logger.info(f"Average time per asset: {total_time/len(all_assets):.2f} seconds if len(all_assets) > 0 else 0")
     logger.info("="*60)
     
     return all_assets
@@ -401,6 +413,7 @@ def save_data(data, file_name, format='excel'):
         raise
 
 def process_asset_type(asset_type_id):
+    """[Previous process_asset_type implementation updated with new process_data]"""
     start_time = time.time()
     asset_type_name = get_asset_type_name(asset_type_id)
     logger.info(f"Processing asset type: {asset_type_name}")
