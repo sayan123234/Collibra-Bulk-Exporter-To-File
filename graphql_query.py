@@ -98,7 +98,7 @@ def get_query(asset_type_id, paginate, nested_offset=0, nested_limit=50):
     }}
     """
 
-def get_nested_query(asset_type_id, asset_id, field_name, nested_limit=49990):
+def get_nested_query(asset_type_id, asset_id, field_name, nested_limit=20000):
     """
     Generate a query for fetching a specific nested field with high limits.
     Uses main_limit=1 to fetch single asset and nested_limit for the nested fields.

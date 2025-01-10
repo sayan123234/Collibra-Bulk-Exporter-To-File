@@ -162,7 +162,7 @@ def fetch_data(asset_type_id, paginate, limit, nested_offset=0, nested_limit=50)
         logger.exception(f"Failed to parse JSON response: {str(error)}")
         return None
 
-def fetch_nested_data(asset_type_id, asset_id, field_name, nested_limit=49990):
+def fetch_nested_data(asset_type_id, asset_id, field_name, nested_limit=20000):
     """
     Fetch a specific nested field with high limit in a separate query.
     """
