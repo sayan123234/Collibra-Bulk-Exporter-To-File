@@ -98,10 +98,16 @@ def get_query(asset_type_id, paginate, nested_offset=0, nested_limit=50):
     }}
     """
 
-def get_nested_query(asset_type_id, asset_id, field_name, nested_limit=20000):
+def get_nested_query(asset_type_id, asset_id, field_name, nested_offset=0, nested_limit=20000):
     """
-    Generate a query for fetching a specific nested field with high limits.
-    Uses main_limit=1 to fetch single asset and nested_limit for the nested fields.
+    Generate a query for fetching a specific nested field with pagination support.
+    
+    Args:
+        asset_type_id: ID of the asset type
+        asset_id: ID of the specific asset
+        field_name: Name of the nested field to fetch
+        nested_offset: Offset for pagination
+        nested_limit: Limit for number of nested items per request
     """
     # Base query structure with limit=1 to ensure we only get one asset
     base_query = f"""
@@ -116,10 +122,10 @@ def get_nested_query(asset_type_id, asset_id, field_name, nested_limit=20000):
             id
     """
 
-    # Field-specific query parts
+    # Field-specific query parts with pagination parameters
     field_queries = {
         'stringAttributes': f"""
-            stringAttributes(limit: {nested_limit}) {{
+            stringAttributes(offset: {nested_offset}, limit: {nested_limit}) {{
                 type {{
                     name
                 }}
@@ -127,7 +133,7 @@ def get_nested_query(asset_type_id, asset_id, field_name, nested_limit=20000):
             }}
         """,
         'multiValueAttributes': f"""
-            multiValueAttributes(limit: {nested_limit}) {{
+            multiValueAttributes(offset: {nested_offset}, limit: {nested_limit}) {{
                 type {{
                     name
                 }}
@@ -135,7 +141,7 @@ def get_nested_query(asset_type_id, asset_id, field_name, nested_limit=20000):
             }}
         """,
         'numericAttributes': f"""
-            numericAttributes(limit: {nested_limit}) {{
+            numericAttributes(offset: {nested_offset}, limit: {nested_limit}) {{
                 type {{
                     name
                 }}
@@ -143,7 +149,7 @@ def get_nested_query(asset_type_id, asset_id, field_name, nested_limit=20000):
             }}
         """,
         'dateAttributes': f"""
-            dateAttributes(limit: {nested_limit}) {{
+            dateAttributes(offset: {nested_offset}, limit: {nested_limit}) {{
                 type {{
                     name
                 }}
@@ -151,7 +157,7 @@ def get_nested_query(asset_type_id, asset_id, field_name, nested_limit=20000):
             }}
         """,
         'booleanAttributes': f"""
-            booleanAttributes(limit: {nested_limit}) {{
+            booleanAttributes(offset: {nested_offset}, limit: {nested_limit}) {{
                 type {{
                     name
                 }}
@@ -159,7 +165,7 @@ def get_nested_query(asset_type_id, asset_id, field_name, nested_limit=20000):
             }}
         """,
         'outgoingRelations': f"""
-            outgoingRelations(limit: {nested_limit}) {{
+            outgoingRelations(offset: {nested_offset}, limit: {nested_limit}) {{
                 target {{
                     id
                     fullName
@@ -174,7 +180,10 @@ def get_nested_query(asset_type_id, asset_id, field_name, nested_limit=20000):
             }}
         """,
         'incomingRelations': f"""
-            incomingRelations(limit: {nested_limit}) {{
+            incomingRelations(offset: {nested_offset}, limit: {nested_limit}) {{
+                type {{
+                    corole
+                }}
                 source {{
                     id
                     fullName
@@ -183,13 +192,10 @@ def get_nested_query(asset_type_id, asset_id, field_name, nested_limit=20000):
                         name
                     }}
                 }}
-                type {{
-                    corole
-                }}
             }}
         """,
         'responsibilities': f"""
-            responsibilities(limit: {nested_limit}) {{
+            responsibilities(offset: {nested_offset}, limit: {nested_limit}) {{
                 role {{
                     name
                 }}
