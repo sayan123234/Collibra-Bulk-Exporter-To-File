@@ -52,7 +52,6 @@ class OAuthTokenManager:
             self._expiration_time = time.time() + token_data["expires_in"]
             
             logging.info("Successfully obtained new OAuth token")
-            return self._token
             
         except requests.RequestException as e:
             logging.error(f"Error obtaining OAuth token: {e}")

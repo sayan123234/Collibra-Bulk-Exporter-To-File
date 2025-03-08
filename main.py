@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from dotenv import load_dotenv
 from graphql_query import get_query, get_nested_query
-from get_assetType_name import get_asset_type_name
+from get_asset_type_name import get_asset_type_name
 from OauthAuth import get_auth_header
 from get_asset_type import get_available_asset_type
 
@@ -162,71 +162,18 @@ def fetch_data(asset_type_id, paginate, limit, nested_offset=0, nested_limit=50)
         logger.exception(f"Failed to parse JSON response: {str(error)}")
         return None
 
-def fetch_nested_data_with_pagination(asset_type_id, asset_id, field_name, make_request, logger, batch_size=20000):
+def fetch_nested_data(asset_type_id, asset_id, field_name, nested_limit=20000):
     """
-    Fetch all nested data for a field using pagination.
+    Fetch all nested data for a field, using pagination if necessary.
     
     Args:
         asset_type_id: ID of the asset type
         asset_id: ID of the specific asset
         field_name: Name of the nested field to fetch
-        make_request: Function to make GraphQL requests
-        logger: Logger instance
-        batch_size: Number of items to fetch per request
+        nested_limit: Initial limit for number of nested items
     
     Returns:
-        List of all nested items for the field
-    """
-    all_items = []
-    offset = 0
-    batch_number = 1
-
-    while True:
-        logger.info(f"Fetching batch {batch_number} for {field_name} (offset: {offset})")
-        
-        query = get_nested_query(asset_type_id, asset_id, field_name, offset, batch_size)
-        
-        try:
-            response = make_request(
-                url=f"https://{base_url}/graphql/knowledgeGraph/v1",
-                json={'query': query}
-            )
-            
-            data = response.json()
-            
-            if 'errors' in data:
-                logger.error(f"GraphQL errors in nested query: {data['errors']}")
-                break
-                
-            if not data['data']['assets']:
-                logger.error(f"No asset found in nested query response")
-                break
-                
-            current_items = data['data']['assets'][0][field_name]
-            current_batch_size = len(current_items)
-            
-            all_items.extend(current_items)
-            logger.info(f"Retrieved {current_batch_size} items in batch {batch_number}")
-            
-            # If we got fewer items than the batch size, we've reached the end
-            if current_batch_size < batch_size:
-                break
-                
-            offset += batch_size
-            batch_number += 1
-            
-        except Exception as e:
-            logger.exception(f"Failed to fetch batch {batch_number} for {field_name}: {str(e)}")
-            break
-
-    logger.info(f"Completed fetching {field_name}. Total items: {len(all_items)}")
-    return all_items
-
-
-def fetch_nested_data(asset_type_id, asset_id, field_name, nested_limit=20000):
-    """
-    Updated fetch_nested_data function that uses pagination when needed.
-    This function should replace the existing fetch_nested_data in main.py
+        List of all nested items for the field or None if an error occurs
     """
     try:
         # First attempt with maximum limit to see if pagination is needed
@@ -257,14 +204,60 @@ def fetch_nested_data(asset_type_id, asset_id, field_name, nested_limit=20000):
         # If we hit the limit, use pagination to fetch all results
         if len(initial_results) == nested_limit:
             logger.info(f"Hit nested limit of {nested_limit} for {field_name}, switching to pagination")
-            return fetch_nested_data_with_pagination(
-                asset_type_id,
-                asset_id,
-                field_name,
-                make_request,
-                logger
-            )
             
+            # Use pagination to fetch all items
+            all_items = []
+            offset = 0
+            batch_number = 1
+            batch_size = nested_limit
+
+            # Add initial results to our collection
+            all_items.extend(initial_results)
+            offset += nested_limit
+            
+            # Continue fetching batches until we get fewer items than requested
+            while True:
+                logger.info(f"Fetching batch {batch_number} for {field_name} (offset: {offset})")
+                
+                query = get_nested_query(asset_type_id, asset_id, field_name, offset, batch_size)
+                
+                try:
+                    response = make_request(
+                        url=f"https://{base_url}/graphql/knowledgeGraph/v1",
+                        json={'query': query}
+                    )
+                    
+                    data = response.json()
+                    
+                    if 'errors' in data:
+                        logger.error(f"GraphQL errors in nested query: {data['errors']}")
+                        break
+                        
+                    if not data['data']['assets']:
+                        logger.error(f"No asset found in nested query response")
+                        break
+                        
+                    current_items = data['data']['assets'][0][field_name]
+                    current_batch_size = len(current_items)
+                    
+                    all_items.extend(current_items)
+                    logger.info(f"Retrieved {current_batch_size} items in batch {batch_number}")
+                    
+                    # If we got fewer items than the batch size, we've reached the end
+                    if current_batch_size < batch_size:
+                        break
+                        
+                    offset += batch_size
+                    batch_number += 1
+                    
+                except Exception as e:
+                    logger.exception(f"Failed to fetch batch {batch_number} for {field_name}: {str(e)}")
+                    break
+
+            logger.info(f"Completed fetching {field_name}. Total items: {len(all_items)}")
+            return all_items
+            
+        # If we didn't hit the limit, return the initial results
         return initial_results
     except Exception as e:
         logger.exception(f"Failed to fetch nested data for {field_name}: {str(e)}")
@@ -380,7 +373,8 @@ def process_data(asset_type_id, limit=94, initial_nested_limit=50):
     logger.info(f"Total assets processed: {len(all_assets)}")
     logger.info(f"Total batches processed: {batch_count}")
     logger.info(f"Total time taken: {total_time:.2f} seconds")
-    logger.info(f"Average time per asset: {total_time/len(all_assets):.2f} seconds if len(all_assets) > 0 else 0")
+    avg_time = total_time/len(all_assets) if all_assets else 0
+    logger.info(f"Average time per asset: {avg_time:.2f} seconds")
     logger.info("="*60)
     
     return all_assets
@@ -489,7 +483,21 @@ def save_data(data, file_name, format='excel'):
         raise
 
 def process_asset_type(asset_type_id):
-    """[Previous process_asset_type implementation updated with new process_data]"""
+    """
+    Process a single asset type by ID.
+    
+    This function:
+    1. Gets the asset type name
+    2. Processes all assets of this type using process_data
+    3. Flattens the JSON structure for each asset
+    4. Saves the data to a file in the specified format
+    
+    Args:
+        asset_type_id: The ID of the asset type to process
+        
+    Returns:
+        float: The time taken to process the asset type in seconds, or 0 if no data was processed
+    """
     start_time = time.time()
     asset_type_name = get_asset_type_name(asset_type_id)
     logger.info(f"Processing asset type: {asset_type_name}")
