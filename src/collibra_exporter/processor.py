@@ -167,6 +167,12 @@ def process_asset_type(base_url, asset_type_id, output_format, output_dir):
     all_assets = process_data(base_url, asset_type_id)
 
     if all_assets:
+        
+        #To directly save without flattening, uncomment the below commented lines
+        # output_filename = f"{asset_type_name}"
+        # output_file = save_data(all_assets, output_filename, output_format, output_dir)
+        
+        #Comment out the following three lines if flattening not required
         flattened_assets = [flatten_json(asset, asset_type_name) for asset in all_assets]
         output_filename = f"{asset_type_name}"
         output_file = save_data(flattened_assets, output_filename, output_format, output_dir)
