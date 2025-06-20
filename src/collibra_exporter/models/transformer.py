@@ -21,7 +21,6 @@ def flatten_json(asset, asset_type_name):
         dict: A flattened dictionary representation of the asset
     """
     flattened = {
-        f"Asset Id of {asset_type_name} ": asset['id'],
         f"{asset_type_name} Full Name": asset['fullName'],
         f"{asset_type_name} Name": asset['displayName'],
         "Asset Type": asset['type']['name'],
@@ -76,7 +75,7 @@ def flatten_json(asset, asset_type_name):
                 rel_type = f"{asset_type_name} {role_type} {relation[target_or_source]['type']['name']}"
             
             display_name = relation[target_or_source].get('displayName', '')
-            asset_id = relation[target_or_source].get('id', '')
+            asset_id = relation[target_or_source].get('fullName', '')
             
             if display_name:
                 relation_types[rel_type].append(display_name.strip())
@@ -85,6 +84,7 @@ def flatten_json(asset, asset_type_name):
     # Update flattened with relation names and their IDs
     for rel_type, values in relation_types.items():
         flattened[rel_type] = ', '.join(values)
-        flattened[f"{rel_type} Asset IDs"] = ', '.join(str(id) for id in relation_ids[rel_type])
+        flattened[f"{rel_type} Full Name"] = ', '.join(str(id) for id in relation_ids[rel_type])
 
     return flattened
+
